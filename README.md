@@ -47,6 +47,8 @@ npm run dev
 - `ENRICH_CONCURRENCY`: concorrencia maxima de enriquecimento automatico
 - `SCRAPE_TIMEOUT_MS`: timeout de scraping em ms (ex.: `3000`)
 - `RATE_LIMIT_PER_MIN`: limite simples por IP/minuto
+- `DEFAULT_SEARCH_RADIUS_M`: raio padrao da busca quando nao houver bbox (em metros)
+- `SEARCH_PAGE_SIZE`: quantidade de empresas por pagina retornada pela busca
 - `SEARCH_CACHE_TTL_MS`: TTL do cache da busca/geocodificacao (ms)
 - `SCRAPER_CACHE_TTL_MS`: TTL do cache de descoberta/scraping (ms)
 - `DEBUG_RUNTIME_LOGS`: habilita logs detalhados de depuracao (`true`/`false`)

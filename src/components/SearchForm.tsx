@@ -1,7 +1,5 @@
 "use client";
 
-import { FormEvent } from "react";
-
 type Props = {
   location: string;
   category: string;
@@ -13,8 +11,8 @@ type Props = {
 
 const categories = ["academia", "padaria", "lanchonete", "restaurante", "mercado", "farmacia", "salão de beleza"];
 
-export function SearchForm(props: Props) {
-  const handleSubmit = (event: FormEvent) => {
+export function SearchForm(props: Readonly<Props>) {
+  const handleSubmit = (event: { preventDefault: () => void }) => {
     event.preventDefault();
     props.onSubmit();
   };

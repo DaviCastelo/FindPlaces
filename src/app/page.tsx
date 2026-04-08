@@ -5,6 +5,16 @@ import { ResultsList } from "@/components/ResultsList";
 import { SearchForm } from "@/components/SearchForm";
 import type { BusinessResult, SearchResponse } from "@/lib/types";
 
+function mergeUniqueBusinesses(existing: BusinessResult[], incoming: BusinessResult[]): BusinessResult[] {
+  const byPlaceId = new Map<string, BusinessResult>();
+  for (const item of existing) byPlaceId.set(item.placeId, item);
+  for (const item of incoming) {
+    const current = byPlaceId.get(item.placeId);
+    byPlaceId.set(item.placeId, current ? { ...current, ...item } : item);
+  }
+  return Array.from(byPlaceId.values());
+}
+
 export default function HomePage() {
   const [location, setLocation] = useState("");
   const [category, setCategory] = useState("academia");
@@ -35,7 +45,7 @@ export default function HomePage() {
       const data = (await response.json()) as SearchResponse & { error?: string };
       if (!response.ok) throw new Error(data.error ?? "Erro ao buscar empresas.");
 
-      setItems((prev) => (isPaginating ? [...prev, ...data.results] : data.results));
+      setItems((prev) => (isPaginating ? mergeUniqueBusinesses(prev, data.results) : data.results));
       setNextPageToken(data.nextPageToken);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Falha inesperada.");

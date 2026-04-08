@@ -11,7 +11,7 @@ type Props = {
   onEnrich: (item: BusinessResult) => void;
 };
 
-export function ResultsList({ items, loading, loadingMore, hasMore, onLoadMore, onEnrich }: Props) {
+export function ResultsList({ items, loading, loadingMore, hasMore, onLoadMore, onEnrich }: Readonly<Props>) {
   if (loading) return <p>Carregando resultados...</p>;
   if (!items.length) return <p>Nenhuma empresa encontrada ainda.</p>;
 
@@ -75,7 +75,7 @@ export function ResultsList({ items, loading, loadingMore, hasMore, onLoadMore, 
           disabled={loadingMore}
           style={{ padding: "10px 14px", borderRadius: 8, border: "1px solid #ccc", cursor: "pointer", background: "#fff" }}
         >
-          {loadingMore ? "Carregando..." : "Carregar mais"}
+          {loadingMore ? "Carregando..." : "Carregar +50"}
         </button>
       ) : null}
     </div>

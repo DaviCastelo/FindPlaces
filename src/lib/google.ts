@@ -25,8 +25,8 @@ type PhotonResponse = {
   }>;
 };
 
-const pageSize = 20;
-const searchRadiusM = 20000;
+const pageSize = Number(process.env.SEARCH_PAGE_SIZE ?? 50);
+const searchRadiusM = Number(process.env.DEFAULT_SEARCH_RADIUS_M ?? 35000);
 const cacheTtlMs = Number(process.env.SEARCH_CACHE_TTL_MS ?? 10 * 60 * 1000);
 const overpassEndpoints = [
   "https://overpass-api.de/api/interpreter",
@@ -134,13 +134,14 @@ export async function geocodeLocation(query: string): Promise<
   | undefined
 > {
   const cacheKey = query.trim().toLowerCase();
+  const locationQuery = `${query}, Brasil`;
   const cached = geocodeCache.get(cacheKey);
   if (cached && cached.expiresAt > Date.now()) {
     return cached.value;
   }
 
   const nominatim = await fetch(
-    `https://nominatim.openstreetmap.org/search?format=jsonv2&limit=1&countrycodes=br&q=${encodeURIComponent(`${query}, Brasil`)}`,
+    `https://nominatim.openstreetmap.org/search?format=jsonv2&limit=1&countrycodes=br&q=${encodeURIComponent(locationQuery)}`,
     {
       cache: "no-store",
       headers: { "user-agent": "local-contacts-app/1.0 (nominatim-geocoder)" },
@@ -167,7 +168,7 @@ export async function geocodeLocation(query: string): Promise<
     await debugLog("src/lib/google.ts:102", "nominatim non-ok", { ok: nominatim.ok, status: nominatim.status, query }, "H2");
   }
 
-  const photon = await fetch(`https://photon.komoot.io/api/?limit=1&lang=pt&q=${encodeURIComponent(`${query}, Brasil`)}`, {
+  const photon = await fetch(`https://photon.komoot.io/api/?limit=1&lang=pt&q=${encodeURIComponent(locationQuery)}`, {
     cache: "no-store",
   });
   if (!photon.ok) {
@@ -287,6 +288,7 @@ out center tags;`;
         tags: element.tags,
       };
     });
+  mapped.sort((a, b) => a.place_id.localeCompare(b.place_id));
 
   const paged = mapped.slice(offset, offset + pageSize);
   const nextOffset = offset + pageSize < mapped.length ? String(offset + pageSize) : undefined;

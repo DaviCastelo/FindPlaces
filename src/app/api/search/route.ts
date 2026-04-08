@@ -69,7 +69,7 @@ export async function POST(req: NextRequest) {
       "H1",
     );
 
-    if (!pageToken && (!location || !category)) {
+    if (!location || !category) {
       return NextResponse.json({ error: "Informe localizacao e categoria." }, { status: 400 });
     }
 
@@ -77,20 +77,21 @@ export async function POST(req: NextRequest) {
     let lng: number | undefined;
     let bbox: { south: number; west: number; north: number; east: number } | undefined;
     let radiusM: number | undefined;
-    if (location && !pageToken) {
+    if (location) {
       const coords = await geocodeLocation(location);
       lat = coords?.lat;
       lng = coords?.lng;
       bbox = coords?.bbox;
       const precision = coords?.precisionType?.toLowerCase() ?? "";
       if (precision === "suburb" || precision === "quarter" || precision === "neighbourhood") {
-        radiusM = 3000;
+        radiusM = 6000;
       } else if (precision === "city" || precision === "town" || precision === "municipality") {
-        radiusM = 12000;
+        // City-wide fallback when geocoder does not provide a usable bbox.
+        radiusM = 35000;
       } else if (precision === "state") {
-        radiusM = 50000;
+        radiusM = 120000;
       } else if (precision === "country") {
-        radiusM = 80000;
+        radiusM = 300000;
       }
     }
     await debugLog(
@@ -119,7 +120,7 @@ export async function POST(req: NextRequest) {
       "H3",
     );
 
-    const baseResults = searchResponse.results.slice(0, 20);
+    const baseResults = searchResponse.results;
     const results: BusinessResult[] = await mapWithConcurrency(baseResults, ENRICH_CONCURRENCY, async (item, index) => {
         const tags = (item as { tags?: Record<string, string> }).tags;
         let phone = tags?.["contact:phone"] ?? tags?.phone;
@@ -137,6 +138,7 @@ export async function POST(req: NextRequest) {
           }
         }
 
+        const fallbackQuery = [item.name, item.formatted_address ?? ""].join(" ").trim();
         return {
           placeId: item.place_id,
           name: item.name,
@@ -149,7 +151,7 @@ export async function POST(req: NextRequest) {
           mapsUrl:
             typeof item.geometry?.location?.lat === "number" && typeof item.geometry?.location?.lng === "number"
               ? `https://www.google.com/maps/search/?api=1&query=${item.geometry.location.lat},${item.geometry.location.lng}`
-              : `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(`${item.name} ${item.formatted_address ?? ""}`.trim())}`,
+              : `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(fallbackQuery)}`,
         };
       });
 
