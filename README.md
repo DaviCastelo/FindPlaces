@@ -9,8 +9,9 @@ Aplicacao simples em Next.js para buscar empresas por localizacao no Brasil (bai
 - Exibicao de contato comercial: telefone, WhatsApp, e-mail e website
 - Paginacao de resultados com `next_page_token`
 - Endpoint opcional para scraping de website e tentativa de extrair e-mail/telefone
-- Enriquecimento automatico de telefone: busca por nome/endereco em mecanismo de busca e scraping do site encontrado
+- Enriquecimento automatico opcional de telefone (desligado por padrao para melhor performance)
 - Limite simples por IP para proteger custo e abuso
+- Cache em memoria para geocodificacao, busca e scraping
 
 ## Tecnologias
 
@@ -42,8 +43,13 @@ npm run dev
 
 - `ENABLE_SCRAPING`: `true` ou `false` para habilitar endpoint de scraping
 - `ENABLE_AUTO_PHONE_ENRICHMENT`: `true` ou `false` para tentar descobrir telefone via busca + site oficial
-- `SCRAPE_TIMEOUT_MS`: timeout de scraping em ms (ex.: `5000`)
+- `ENRICH_TOP_N`: quantidade maxima de itens enriquecidos automaticamente na primeira pagina
+- `ENRICH_CONCURRENCY`: concorrencia maxima de enriquecimento automatico
+- `SCRAPE_TIMEOUT_MS`: timeout de scraping em ms (ex.: `3000`)
 - `RATE_LIMIT_PER_MIN`: limite simples por IP/minuto
+- `SEARCH_CACHE_TTL_MS`: TTL do cache da busca/geocodificacao (ms)
+- `SCRAPER_CACHE_TTL_MS`: TTL do cache de descoberta/scraping (ms)
+- `DEBUG_RUNTIME_LOGS`: habilita logs detalhados de depuracao (`true`/`false`)
 
 ## Deploy na Vercel
 
@@ -58,6 +64,7 @@ npm run dev
 - Geocodificacao usa Nominatim com fallback para Photon/Pelias.
 - A busca de estabelecimentos usa Overpass API.
 - O enriquecimento automatico tenta primeiro dados do OSM; se faltar telefone, tenta achar website publico e extrair telefone do HTML.
+- Para resposta mais rapida, o enriquecimento automatico fica desativado por padrao e pode ser acionado sob demanda na interface.
 - Google Maps fica apenas como link de consulta manual (sem scraping automatizado).
 - Use os dados com responsabilidade e em conformidade com LGPD e regras de contato comercial.
 # FindPlaces
