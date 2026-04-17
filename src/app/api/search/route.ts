@@ -3,14 +3,21 @@ import { geocodeLocation, searchPlaces } from "@/lib/google";
 import { deriveWhatsappFromPhone, normalizeBrazilPhone } from "@/lib/contacts";
 import type { BusinessResult, ContactSource, SearchResponse } from "@/lib/types";
 import { checkRateLimit } from "@/lib/rateLimit";
-import { discoverWebsiteByBusiness, scrapeContactFromWebsite } from "@/lib/scraper";
+import { discoverWebsiteByBusiness } from "@/lib/scraper";
 import { getEnabledCategoryIds } from "@/lib/category-config";
+import { enqueueEnrichment } from "@/lib/enrichment-queue";
+import { getSearchCache, setSearchCache } from "@/lib/query-cache";
+import { appendComplianceAudit, upsertLead } from "@/lib/storage";
+import { trackLeadQualityMetric } from "@/lib/metrics";
 
 const DEFAULT_LIMIT = Number(process.env.RATE_LIMIT_PER_MIN ?? 30);
 const ENABLE_AUTO_PHONE_ENRICHMENT = process.env.ENABLE_AUTO_PHONE_ENRICHMENT === "true";
 const SCRAPE_TIMEOUT_MS = Number(process.env.SCRAPE_TIMEOUT_MS ?? 3000);
 const ENRICH_TOP_N = Number(process.env.ENRICH_TOP_N ?? 5);
 const ENRICH_CONCURRENCY = Number(process.env.ENRICH_CONCURRENCY ?? 3);
+const SEARCH_CACHE_TTL_MS = Number(process.env.SEARCH_CACHE_TTL_MS ?? 10 * 60 * 1000);
+const LGPD_LEGAL_BASIS = process.env.LGPD_LEGAL_BASIS ?? "legitimate_interest_b2b";
+const CONTACT_PURPOSE = process.env.CONTACT_PURPOSE ?? "prospeccao_comercial_b2b";
 async function debugLog(
   location: string,
   message: string,
@@ -123,23 +130,9 @@ async function enrichBusinessContact(
   const email = tags?.["contact:email"] ?? tags?.email;
   let explicitWhatsapp: string | undefined;
   let whatsappSource: ContactSource | undefined;
-
-  const shouldEnrich = options.shouldAutoEnrich && !options.pageToken && index < ENRICH_TOP_N;
-  if (shouldEnrich && !phone) {
-    if (!website) {
-      website = await discoverWebsiteByBusiness(item.name, item.formatted_address ?? "", SCRAPE_TIMEOUT_MS);
-    }
-    if (website) {
-      const scraped = await scrapeContactFromWebsite(website, SCRAPE_TIMEOUT_MS);
-      if (scraped.phone) {
-        phone = normalizeBrazilPhone(scraped.phone) ?? phone;
-        phoneSource = scraped.phoneSource ?? "website_regex";
-      }
-      if (scraped.whatsapp && !whatsappSource) {
-        whatsappSource = scraped.whatsappSource ?? "website_whatsapp_link";
-        explicitWhatsapp = scraped.whatsapp;
-      }
-    }
+  // Busca principal nao bloqueia mais por scraping. Enriquecimento entra em fila assincrona.
+  if (!website && options.shouldAutoEnrich && !options.pageToken && index < ENRICH_TOP_N) {
+    website = await discoverWebsiteByBusiness(item.name, item.formatted_address ?? "", SCRAPE_TIMEOUT_MS);
   }
 
   return { phone, phoneSource, email, website, explicitWhatsapp, whatsappSource };
@@ -161,6 +154,21 @@ async function mapBusinessResult(
 ): Promise<BusinessResult> {
   const enriched = await enrichBusinessContact(item, index, options);
   const whatsapp = resolveWhatsapp(enriched.phone, enriched.explicitWhatsapp, enriched.whatsappSource);
+  const dataSource = enriched.phoneSource ?? whatsapp.whatsappSource ?? "unknown";
+  let enrichmentJobId: string | undefined;
+  let enrichmentStatus: BusinessResult["enrichmentStatus"];
+  const shouldQueueEnrichment = options.shouldAutoEnrich && !options.pageToken && index < ENRICH_TOP_N && !enriched.phone;
+  if (shouldQueueEnrichment) {
+    const queued = await enqueueEnrichment({
+      leadId: buildSafePlaceId(item, index),
+      name: item.name,
+      address: item.formatted_address ?? "Endereco nao informado",
+      website: enriched.website,
+      timeoutMs: SCRAPE_TIMEOUT_MS,
+    });
+    enrichmentJobId = queued.jobId;
+    enrichmentStatus = "queued";
+  }
   return {
     placeId: buildSafePlaceId(item, index),
     name: item.name,
@@ -171,9 +179,14 @@ async function mapBusinessResult(
     whatsapp: whatsapp.whatsapp,
     whatsappSource: whatsapp.whatsappSource,
     contactConfidence: contactConfidence(enriched.phoneSource, whatsapp.whatsappSource),
+    enrichmentJobId,
+    enrichmentStatus,
     email: enriched.email,
     website: enriched.website,
     mapsUrl: buildMapsUrl(item),
+    dataSource,
+    legalBasis: LGPD_LEGAL_BASIS,
+    contactPurpose: CONTACT_PURPOSE,
   };
 }
 
@@ -198,9 +211,21 @@ export async function POST(req: NextRequest) {
     if (!location || !category) {
       return NextResponse.json({ error: "Informe localizacao e categoria." }, { status: 400 });
     }
-    const enabledCategories = new Set(getEnabledCategoryIds());
-    if (!enabledCategories.has(category.toLowerCase())) {
+    const normalizedCategory = category.toLowerCase();
+    const enabledCategories = new Set(await getEnabledCategoryIds());
+    if (!enabledCategories.has(normalizedCategory)) {
       return NextResponse.json({ error: "Categoria desabilitada nas configuracoes." }, { status: 400 });
+    }
+    const cacheKey = JSON.stringify({
+      location: location.trim().toLowerCase(),
+      category: normalizedCategory,
+      pageToken: pageToken ?? "",
+      autoEnrich: ENABLE_AUTO_PHONE_ENRICHMENT,
+      enrichTopN: ENRICH_TOP_N,
+    });
+    const cachedSearch = await getSearchCache(cacheKey);
+    if (cachedSearch) {
+      return NextResponse.json(cachedSearch.response);
     }
 
     let lat: number | undefined;
@@ -264,15 +289,48 @@ export async function POST(req: NextRequest) {
         shouldAutoEnrich: ENABLE_AUTO_PHONE_ENRICHMENT,
       }),
     );
+    await Promise.all(
+      results.map(async (result) => {
+        await upsertLead(result.placeId, result, result.dataSource, LGPD_LEGAL_BASIS, CONTACT_PURPOSE);
+        await appendComplianceAudit(result.placeId, result.dataSource, LGPD_LEGAL_BASIS, CONTACT_PURPOSE, {
+          location,
+          category: normalizedCategory,
+          pageToken: pageToken ?? null,
+        });
+        await trackLeadQualityMetric({
+          category: normalizedCategory,
+          hasPhone: Boolean(result.phone),
+          hasWhatsapp: Boolean(result.whatsapp),
+          responseStatus: searchResponse.status === "OK" ? "ok" : "zero_results",
+        });
+      }),
+    );
 
     const payload: SearchResponse = {
       results,
       nextPageToken: searchResponse.next_page_token,
     };
+    await setSearchCache(
+      cacheKey,
+      {
+        response: payload,
+        compliance: {
+          legalBasis: LGPD_LEGAL_BASIS,
+          purpose: CONTACT_PURPOSE,
+        },
+      },
+      SEARCH_CACHE_TTL_MS,
+    );
 
     return NextResponse.json(payload);
   } catch (error) {
     const message = error instanceof Error ? error.message : "Falha inesperada na busca.";
+    await trackLeadQualityMetric({
+      category: "unknown",
+      hasPhone: false,
+      hasWhatsapp: false,
+      responseStatus: "error",
+    });
     await debugLog("src/app/api/search/route.ts:95", "search route exception", { message }, "H4");
     return NextResponse.json({ error: message }, { status: 500 });
   }

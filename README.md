@@ -12,6 +12,11 @@ Aplicacao simples em Next.js para buscar empresas por localizacao no Brasil (bai
 - Paginacao de resultados com `next_page_token`
 - Endpoint opcional para scraping de website e tentativa de extrair e-mail/telefone
 - Enriquecimento automatico opcional de telefone (desligado por padrao para melhor performance)
+- Fila assincrona de enriquecimento (`/api/enrich`) para nao bloquear a busca
+- Persistencia opcional em Postgres para configuracoes, cache, leads e jobs (`DATABASE_URL`)
+- Cache de consulta com invalidacao controlada (`/api/cache/invalidate`)
+- Monitoramento de qualidade de dados (`/api/metrics/quality`)
+- Trilha de compliance LGPD (fonte do dado, base legal e finalidade)
 - Limite simples por IP para proteger custo e abuso
 - Cache em memoria para geocodificacao, busca e scraping
 
@@ -61,6 +66,10 @@ npm run dev
 - `FALLBACK_QUERY_LIMIT`: limite maximo de itens por consulta no fallback Nominatim
 - `FALLBACK_MAX_QUERIES`: quantidade maxima de termos/sinonimos no fallback por categoria
 - `SCRAPE_MAX_PAGES`: quantidade de paginas por site para varrer contatos
+- `SEARCH_MAX_EXPANSION_ROUNDS`: quantidade maxima de varreduras extras apos fim da paginacao
+- `LGPD_LEGAL_BASIS`: base legal usada no registro de contato comercial
+- `CONTACT_PURPOSE`: finalidade de uso do contato comercial
+- `DATABASE_URL`: conexao Postgres para persistencia (quando ausente, fallback em memoria)
 
 ## Deploy na Vercel
 
@@ -75,6 +84,13 @@ npm run dev
 - Endpoint `PUT /api/settings/categories`: salva a configuracao global (minimo de 1 categoria habilitada).
 - A tela de Configuracoes permite alterar as categorias e persistir no backend.
 - O filtro da tela de busca exibe apenas categorias habilitadas.
+
+## Novos endpoints operacionais
+
+- `POST /api/enrich`: enfileira enriquecimento assincrono de um lead.
+- `GET /api/enrich?jobId=<id>`: consulta status/resultado do job de enriquecimento.
+- `POST /api/cache/invalidate`: invalida cache de consultas e incrementa versao.
+- `GET /api/metrics/quality`: resumo de qualidade (taxa de telefone, WhatsApp e taxa de resposta por nicho).
 
 ## Observacoes importantes
 

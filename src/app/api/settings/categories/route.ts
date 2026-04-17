@@ -3,7 +3,7 @@ import type { CategoryOption } from "@/lib/types";
 import { getCategoryConfig, updateCategoryConfig } from "@/lib/category-config";
 
 export async function GET() {
-  return NextResponse.json(getCategoryConfig());
+  return NextResponse.json(await getCategoryConfig());
 }
 
 export async function PUT(req: NextRequest) {
@@ -12,7 +12,7 @@ export async function PUT(req: NextRequest) {
     if (!Array.isArray(body.categories)) {
       return NextResponse.json({ error: "Payload invalido: categories deve ser uma lista." }, { status: 400 });
     }
-    const saved = updateCategoryConfig(body.categories);
+    const saved = await updateCategoryConfig(body.categories);
     return NextResponse.json(saved);
   } catch (error) {
     const message = error instanceof Error ? error.message : "Falha ao salvar configuracoes.";

@@ -29,7 +29,6 @@ export default function HomePage() {
   const [location, setLocation] = useState("");
   const [category, setCategory] = useState("");
   const [categories, setCategories] = useState<CategoryOption[]>([]);
-  const [isCollapsed, setIsCollapsed] = useState(false);
   const [activeView, setActiveView] = useState<"search" | "settings">("search");
   const [items, setItems] = useState<BusinessResult[]>([]);
   const [nextPageToken, setNextPageToken] = useState<string | undefined>(undefined);
@@ -136,10 +135,8 @@ export default function HomePage() {
     <div className="app-shell">
       <div className="dashboard-layout">
         <Sidebar
-          isCollapsed={isCollapsed}
           activeView={activeView}
           onSelectView={setActiveView}
-          onToggleCollapse={() => setIsCollapsed((prev) => !prev)}
         />
 
         <main className="main-content">

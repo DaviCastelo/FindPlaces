@@ -1,4 +1,5 @@
 import type { CategoryConfigResponse, CategoryOption } from "@/lib/types";
+import { readState, writeState } from "@/lib/storage";
 
 const defaultCategoryCatalog: Array<{ id: string; label: string }> = [
   { id: "academia", label: "Academia" },
@@ -37,19 +38,42 @@ let categoryConfigState: CategoryConfigResponse = {
   })),
   updatedAt: new Date().toISOString(),
 };
+let categoryConfigLoaded = false;
 
 function normalized(value: string): string {
   return value.trim().toLowerCase();
 }
 
-export function getCategoryConfig(): CategoryConfigResponse {
+async function ensureCategoryConfigLoaded(): Promise<void> {
+  if (categoryConfigLoaded) return;
+  const persisted = await readState<CategoryOption[]>("settings", "categories");
+  if (persisted?.value?.length) {
+    const byId = new Map(persisted.value.map((item) => [normalized(item.id), item]));
+    categoryConfigState = {
+      categories: defaultCategoryCatalog.map((base) => {
+        const override = byId.get(normalized(base.id));
+        return {
+          id: base.id,
+          label: base.label,
+          enabled: override ? Boolean(override.enabled) : true,
+        };
+      }),
+      updatedAt: persisted.updatedAt,
+    };
+  }
+  categoryConfigLoaded = true;
+}
+
+export async function getCategoryConfig(): Promise<CategoryConfigResponse> {
+  await ensureCategoryConfigLoaded();
   return {
     categories: categoryConfigState.categories.map((category) => ({ ...category })),
     updatedAt: categoryConfigState.updatedAt,
   };
 }
 
-export function updateCategoryConfig(input: CategoryOption[]): CategoryConfigResponse {
+export async function updateCategoryConfig(input: CategoryOption[]): Promise<CategoryConfigResponse> {
+  await ensureCategoryConfigLoaded();
   const byId = new Map(input.map((item) => [normalized(item.id), item]));
   const categories = defaultCategoryCatalog.map((base) => {
     const override = byId.get(normalized(base.id));
@@ -64,12 +88,13 @@ export function updateCategoryConfig(input: CategoryOption[]): CategoryConfigRes
   }
   categoryConfigState = {
     categories,
-    updatedAt: new Date().toISOString(),
+    updatedAt: await writeState("settings", "categories", categories),
   };
   return getCategoryConfig();
 }
 
-export function getEnabledCategoryIds(): string[] {
+export async function getEnabledCategoryIds(): Promise<string[]> {
+  await ensureCategoryConfigLoaded();
   return categoryConfigState.categories
     .filter((category) => category.enabled)
     .map((category) => normalized(category.id));

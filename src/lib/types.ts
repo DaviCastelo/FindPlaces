@@ -19,9 +19,14 @@ export type BusinessResult = {
   phoneSource?: ContactSource;
   whatsappSource?: ContactSource;
   contactConfidence?: "high" | "medium" | "low";
+  enrichmentJobId?: string;
+  enrichmentStatus?: "queued" | "processing" | "completed" | "failed";
   email?: string;
   website?: string;
   mapsUrl?: string;
+  dataSource?: string;
+  legalBasis?: string;
+  contactPurpose?: string;
 };
 
 export type SearchResponse = {
