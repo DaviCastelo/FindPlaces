@@ -1,15 +1,16 @@
 "use client";
 
+import type { CategoryOption } from "@/lib/types";
+
 type Props = {
   location: string;
   category: string;
+  categories: CategoryOption[];
   loading: boolean;
   onLocationChange: (value: string) => void;
   onCategoryChange: (value: string) => void;
   onSubmit: () => void;
 };
-
-const categories = ["academia", "padaria", "lanchonete", "restaurante", "mercado", "farmacia", "salão de beleza"];
 
 export function SearchForm(props: Readonly<Props>) {
   const handleSubmit = (event: { preventDefault: () => void }) => {
@@ -18,29 +19,29 @@ export function SearchForm(props: Readonly<Props>) {
   };
 
   return (
-    <form className="card" onSubmit={handleSubmit} style={{ display: "grid", gap: 12 }}>
+    <form className="card" onSubmit={handleSubmit} style={{ display: "grid", gap: 14 }}>
       <h2 style={{ margin: 0 }}>Buscar contatos comerciais</h2>
-      <label style={{ display: "grid", gap: 6 }}>
-        <span>Localizacao (bairro, cidade, estado)</span>
+      <label className="field">
+        <span className="field-label">Localizacao (bairro, cidade, estado)</span>
         <input
           value={props.location}
           onChange={(e) => props.onLocationChange(e.target.value)}
           placeholder="Ex: Savassi, Belo Horizonte - MG"
-          style={{ padding: 10, borderRadius: 8, border: "1px solid #ccc" }}
+          className="field-input"
           required
         />
       </label>
 
-      <label style={{ display: "grid", gap: 6 }}>
-        <span>Categoria</span>
+      <label className="field">
+        <span className="field-label">Categoria</span>
         <select
           value={props.category}
           onChange={(e) => props.onCategoryChange(e.target.value)}
-          style={{ padding: 10, borderRadius: 8, border: "1px solid #ccc" }}
+          className="field-input"
         >
-          {categories.map((category) => (
-            <option key={category} value={category}>
-              {category}
+          {props.categories.map((category) => (
+            <option key={category.id} value={category.id}>
+              {category.label}
             </option>
           ))}
         </select>
@@ -49,7 +50,7 @@ export function SearchForm(props: Readonly<Props>) {
       <button
         type="submit"
         disabled={props.loading}
-        style={{ padding: "10px 14px", borderRadius: 8, border: "none", background: "#111827", color: "#fff", cursor: "pointer" }}
+        className="btn-primary"
       >
         {props.loading ? "Buscando..." : "Buscar empresas"}
       </button>

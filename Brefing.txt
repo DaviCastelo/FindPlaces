@@ -1,0 +1,52 @@
+Identidade da marca — FindPlaces
+
+Posicionamento
+Plataforma confiável e eficiente para descoberta de empresas e dados comerciais.
+
+Personalidade
+
+Técnica
+Precisa
+Moderna
+Confiável
+Paleta de cores
+
+Primária (marca)
+
+Azul profundo: #1E3A8A → transmite confiança e dados estruturados
+
+Secundária
+
+Azul claro: #3B82F6 → tecnologia / acessibilidade
+Cinza escuro: #1F2937 → texto principal
+
+Neutras
+
+Cinza claro: #E5E7EB
+Branco: #FFFFFF
+
+Destaque (call-to-action)
+
+Verde sutil: #10B981 → sucesso / encontrado
+Tipografia
+Principal: Inter
+Alternativa: Roboto
+
+Estilo: clean, sem serifa, foco em legibilidade
+
+Conceito da logo
+
+Minimalista com:
+
+Ícone de pin de localização
+Integrado com um "F" estilizado
+Elemento sutil de busca/dados (ex: linhas ou grid leve)
+Lemas (taglines)
+“Encontre dados. Descubra lugares.”
+“Dados de empresas, na palma da sua mão.”
+“Localize. Conecte. Decida.”
+“Informação confiável, onde você precisar.”
+Diretrizes de uso
+Fundo branco → usar azul primário
+Fundo escuro → versão branca da logo
+Ícone isolado → usar para favicon/app

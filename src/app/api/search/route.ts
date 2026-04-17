@@ -1,9 +1,10 @@
 import { NextRequest, NextResponse } from "next/server";
 import { geocodeLocation, searchPlaces } from "@/lib/google";
-import { phoneToWhatsappLink } from "@/lib/contacts";
-import type { BusinessResult, SearchResponse } from "@/lib/types";
+import { deriveWhatsappFromPhone, normalizeBrazilPhone } from "@/lib/contacts";
+import type { BusinessResult, ContactSource, SearchResponse } from "@/lib/types";
 import { checkRateLimit } from "@/lib/rateLimit";
 import { discoverWebsiteByBusiness, scrapeContactFromWebsite } from "@/lib/scraper";
+import { getEnabledCategoryIds } from "@/lib/category-config";
 
 const DEFAULT_LIMIT = Number(process.env.RATE_LIMIT_PER_MIN ?? 30);
 const ENABLE_AUTO_PHONE_ENRICHMENT = process.env.ENABLE_AUTO_PHONE_ENRICHMENT === "true";
@@ -51,6 +52,131 @@ async function mapWithConcurrency<T, R>(items: T[], concurrency: number, fn: (it
   return out;
 }
 
+function buildSafePlaceId(item: { place_id?: string; name?: string; formatted_address?: string }, index: number): string {
+  if (item.place_id?.trim()) return item.place_id;
+  const base = `${item.name ?? "empresa"}|${item.formatted_address ?? "endereco"}|${index}`
+    .trim()
+    .toLowerCase()
+    .replaceAll(/\s+/g, "-")
+    .replaceAll(/[^a-z0-9\-|]/g, "");
+  return `fallback-${base || index}`;
+}
+
+function contactConfidence(phoneSource?: ContactSource, whatsappSource?: ContactSource): "high" | "medium" | "low" {
+  const highSources = new Set<ContactSource>(["osm", "website_tel_link", "website_whatsapp_link"]);
+  if ((phoneSource && highSources.has(phoneSource)) || (whatsappSource && highSources.has(whatsappSource))) {
+    return "high";
+  }
+  if (phoneSource || whatsappSource) return "medium";
+  return "low";
+}
+
+function buildMapsUrl(item: {
+  name: string;
+  formatted_address?: string;
+  geometry?: { location?: { lat: number; lng: number } };
+}): string {
+  if (typeof item.geometry?.location?.lat === "number" && typeof item.geometry?.location?.lng === "number") {
+    return `https://www.google.com/maps/search/?api=1&query=${item.geometry.location.lat},${item.geometry.location.lng}`;
+  }
+  const fallbackQuery = [item.name, item.formatted_address ?? ""].join(" ").trim();
+  return `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(fallbackQuery)}`;
+}
+
+function resolveWhatsapp(
+  phone: string | undefined,
+  explicitWhatsapp: string | undefined,
+  existingSource?: ContactSource,
+): { whatsapp?: string; whatsappSource?: ContactSource } {
+  const derivedWhatsapp = explicitWhatsapp ? undefined : deriveWhatsappFromPhone(phone);
+  const finalWhatsapp = explicitWhatsapp ?? derivedWhatsapp;
+  if (!finalWhatsapp) return { whatsapp: undefined, whatsappSource: existingSource };
+  return {
+    whatsapp: finalWhatsapp,
+    whatsappSource: existingSource ?? "derived_from_phone",
+  };
+}
+
+async function enrichBusinessContact(
+  item: {
+    name: string;
+    formatted_address?: string;
+    tags?: Record<string, string>;
+  },
+  index: number,
+  options: {
+    pageToken?: string;
+    shouldAutoEnrich: boolean;
+  },
+): Promise<{
+  phone?: string;
+  phoneSource?: ContactSource;
+  email?: string;
+  website?: string;
+  explicitWhatsapp?: string;
+  whatsappSource?: ContactSource;
+}> {
+  const tags = item.tags;
+  let phone = normalizeBrazilPhone(tags?.["contact:phone"] ?? tags?.phone);
+  let phoneSource: ContactSource | undefined = phone ? "osm" : undefined;
+  let website = tags?.["contact:website"] ?? tags?.website;
+  const email = tags?.["contact:email"] ?? tags?.email;
+  let explicitWhatsapp: string | undefined;
+  let whatsappSource: ContactSource | undefined;
+
+  const shouldEnrich = options.shouldAutoEnrich && !options.pageToken && index < ENRICH_TOP_N;
+  if (shouldEnrich && !phone) {
+    if (!website) {
+      website = await discoverWebsiteByBusiness(item.name, item.formatted_address ?? "", SCRAPE_TIMEOUT_MS);
+    }
+    if (website) {
+      const scraped = await scrapeContactFromWebsite(website, SCRAPE_TIMEOUT_MS);
+      if (scraped.phone) {
+        phone = normalizeBrazilPhone(scraped.phone) ?? phone;
+        phoneSource = scraped.phoneSource ?? "website_regex";
+      }
+      if (scraped.whatsapp && !whatsappSource) {
+        whatsappSource = scraped.whatsappSource ?? "website_whatsapp_link";
+        explicitWhatsapp = scraped.whatsapp;
+      }
+    }
+  }
+
+  return { phone, phoneSource, email, website, explicitWhatsapp, whatsappSource };
+}
+
+async function mapBusinessResult(
+  item: {
+    place_id?: string;
+    name: string;
+    formatted_address?: string;
+    geometry?: { location?: { lat: number; lng: number } };
+    tags?: Record<string, string>;
+  },
+  index: number,
+  options: {
+    pageToken?: string;
+    shouldAutoEnrich: boolean;
+  },
+): Promise<BusinessResult> {
+  const enriched = await enrichBusinessContact(item, index, options);
+  const whatsapp = resolveWhatsapp(enriched.phone, enriched.explicitWhatsapp, enriched.whatsappSource);
+  return {
+    placeId: buildSafePlaceId(item, index),
+    name: item.name,
+    address: item.formatted_address ?? "Endereco nao informado",
+    location: item.geometry?.location,
+    phone: enriched.phone,
+    phoneSource: enriched.phoneSource,
+    whatsapp: whatsapp.whatsapp,
+    whatsappSource: whatsapp.whatsappSource,
+    contactConfidence: contactConfidence(enriched.phoneSource, whatsapp.whatsappSource),
+    email: enriched.email,
+    website: enriched.website,
+    mapsUrl: buildMapsUrl(item),
+  };
+}
+
 export async function POST(req: NextRequest) {
   try {
     const ip = req.headers.get("x-forwarded-for")?.split(",")[0]?.trim() ?? "unknown";
@@ -71,6 +197,10 @@ export async function POST(req: NextRequest) {
 
     if (!location || !category) {
       return NextResponse.json({ error: "Informe localizacao e categoria." }, { status: 400 });
+    }
+    const enabledCategories = new Set(getEnabledCategoryIds());
+    if (!enabledCategories.has(category.toLowerCase())) {
+      return NextResponse.json({ error: "Categoria desabilitada nas configuracoes." }, { status: 400 });
     }
 
     let lat: number | undefined;
@@ -121,40 +251,19 @@ export async function POST(req: NextRequest) {
       "H3",
     );
 
-    const baseResults = searchResponse.results;
-    const results: BusinessResult[] = await mapWithConcurrency(baseResults, ENRICH_CONCURRENCY, async (item, index) => {
-        const tags = (item as { tags?: Record<string, string> }).tags;
-        let phone = tags?.["contact:phone"] ?? tags?.phone;
-        let website = tags?.["contact:website"] ?? tags?.website;
-        const email = tags?.["contact:email"] ?? tags?.email;
-
-        const shouldEnrich = ENABLE_AUTO_PHONE_ENRICHMENT && !pageToken && index < ENRICH_TOP_N;
-        if (shouldEnrich && !phone) {
-          if (!website) {
-            website = await discoverWebsiteByBusiness(item.name, item.formatted_address ?? "", SCRAPE_TIMEOUT_MS);
-          }
-          if (website) {
-            const scraped = await scrapeContactFromWebsite(website, SCRAPE_TIMEOUT_MS);
-            phone = scraped.phone ?? phone;
-          }
-        }
-
-        const fallbackQuery = [item.name, item.formatted_address ?? ""].join(" ").trim();
-        return {
-          placeId: item.place_id,
-          name: item.name,
-          address: item.formatted_address ?? "Endereco nao informado",
-          location: item.geometry?.location,
-          phone,
-          whatsapp: phoneToWhatsappLink(phone),
-          email,
-          website,
-          mapsUrl:
-            typeof item.geometry?.location?.lat === "number" && typeof item.geometry?.location?.lng === "number"
-              ? `https://www.google.com/maps/search/?api=1&query=${item.geometry.location.lat},${item.geometry.location.lng}`
-              : `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(fallbackQuery)}`,
-        };
-      });
+    const baseResults = searchResponse.results as Array<{
+      place_id?: string;
+      name: string;
+      formatted_address?: string;
+      geometry?: { location?: { lat: number; lng: number } };
+      tags?: Record<string, string>;
+    }>;
+    const results: BusinessResult[] = await mapWithConcurrency(baseResults, ENRICH_CONCURRENCY, (item, index) =>
+      mapBusinessResult(item, index, {
+        pageToken,
+        shouldAutoEnrich: ENABLE_AUTO_PHONE_ENRICHMENT,
+      }),
+    );
 
     const payload: SearchResponse = {
       results,

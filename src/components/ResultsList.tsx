@@ -12,21 +12,22 @@ type Props = {
 };
 
 export function ResultsList({ items, loading, loadingMore, hasMore, onLoadMore, onEnrich }: Readonly<Props>) {
+  const safeItems = items.filter((item): item is BusinessResult => Boolean(item?.placeId));
   if (loading) return <p>Carregando resultados...</p>;
-  if (!items.length) return <p>Nenhuma empresa encontrada ainda.</p>;
+  if (!safeItems.length) return <p>Nenhuma empresa encontrada ainda.</p>;
 
   return (
-    <div style={{ display: "grid", gap: 12 }}>
-      {items.map((item) => (
+    <div className="result-grid">
+      {safeItems.map((item) => (
         <article key={item.placeId} className="card">
-          <h3 style={{ marginTop: 0 }}>{item.name}</h3>
-          <p>
+          <h3 className="result-title">{item.name}</h3>
+          <p className="result-line">
             <strong>Endereco:</strong> {item.address}
           </p>
-          <p>
+          <p className="result-line">
             <strong>Telefone:</strong> {item.phone ?? "Nao informado"}
           </p>
-          <p>
+          <p className="result-line">
             <strong>WhatsApp:</strong>{" "}
             {item.whatsapp ? (
               <a href={item.whatsapp} target="_blank" rel="noreferrer">
@@ -36,10 +37,10 @@ export function ResultsList({ items, loading, loadingMore, hasMore, onLoadMore, 
               "Nao informado"
             )}
           </p>
-          <p>
+          <p className="result-line">
             <strong>E-mail:</strong> {item.email ?? "Nao informado"}
           </p>
-          <p>
+          <p className="result-line">
             <strong>Website:</strong>{" "}
             {item.website ? (
               <a href={item.website} target="_blank" rel="noreferrer">
@@ -49,7 +50,10 @@ export function ResultsList({ items, loading, loadingMore, hasMore, onLoadMore, 
               "Nao informado"
             )}
           </p>
-          <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
+          <p className="result-meta">
+            Confianca do contato: <strong>{item.contactConfidence ?? "nao informado"}</strong>
+          </p>
+          <div className="result-actions">
             {item.mapsUrl ? (
               <a href={item.mapsUrl} target="_blank" rel="noreferrer">
                 Ver no Google Maps
@@ -59,7 +63,7 @@ export function ResultsList({ items, loading, loadingMore, hasMore, onLoadMore, 
               <button
                 type="button"
                 onClick={() => onEnrich(item)}
-                style={{ border: "1px solid #ccc", padding: "6px 10px", borderRadius: 8, cursor: "pointer" }}
+                className="btn-secondary"
               >
                 Tentar encontrar e-mail/telefone no site
               </button>
@@ -73,7 +77,7 @@ export function ResultsList({ items, loading, loadingMore, hasMore, onLoadMore, 
           type="button"
           onClick={onLoadMore}
           disabled={loadingMore}
-          style={{ padding: "10px 14px", borderRadius: 8, border: "1px solid #ccc", cursor: "pointer", background: "#fff" }}
+          className="btn-secondary"
         >
           {loadingMore ? "Carregando..." : "Carregar mais resultados"}
         </button>

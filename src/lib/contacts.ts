@@ -2,7 +2,7 @@ const emailRegex = /[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[A-Za-z]{2,}/g;
 
 export function normalizeBrazilPhone(raw?: string): string | undefined {
   if (!raw) return undefined;
-  const digits = raw.replace(/\D/g, "");
+  const digits = raw.replaceAll(/\D/g, "");
   if (!digits) return undefined;
 
   if (digits.startsWith("55") && digits.length >= 12) return digits;
@@ -11,10 +11,30 @@ export function normalizeBrazilPhone(raw?: string): string | undefined {
   return digits.length >= 10 ? digits : undefined;
 }
 
-export function phoneToWhatsappLink(raw?: string): string | undefined {
+export function normalizeBrazilPhoneE164(raw?: string): string | undefined {
   const normalized = normalizeBrazilPhone(raw);
   if (!normalized) return undefined;
+  if (!normalized.startsWith("55")) return undefined;
+  return `+${normalized}`;
+}
+
+export function isLikelyBrazilMobile(raw?: string): boolean {
+  const normalized = normalizeBrazilPhone(raw);
+  if (!normalized) return false;
+  const national = normalized.startsWith("55") ? normalized.slice(2) : normalized;
+  // Format expected: DDD + 9 + 8 digits = 11 digits.
+  return national.length === 11 && national[2] === "9";
+}
+
+export function phoneToWhatsappLink(raw?: string): string | undefined {
+  const normalized = normalizeBrazilPhone(raw);
+  if (!normalized?.startsWith("55")) return undefined;
   return `https://wa.me/${normalized}`;
+}
+
+export function deriveWhatsappFromPhone(raw?: string): string | undefined {
+  if (!isLikelyBrazilMobile(raw)) return undefined;
+  return phoneToWhatsappLink(raw);
 }
 
 export function extractFirstEmail(text?: string): string | undefined {
