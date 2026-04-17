@@ -108,6 +108,7 @@ export async function POST(req: NextRequest) {
       bbox,
       radiusM,
       pageToken,
+      locationText: location,
     });
 
     if (searchResponse.status !== "OK" && searchResponse.status !== "ZERO_RESULTS") {

@@ -75,7 +75,7 @@ export function ResultsList({ items, loading, loadingMore, hasMore, onLoadMore, 
           disabled={loadingMore}
           style={{ padding: "10px 14px", borderRadius: 8, border: "1px solid #ccc", cursor: "pointer", background: "#fff" }}
         >
-          {loadingMore ? "Carregando..." : "Carregar +50"}
+          {loadingMore ? "Carregando..." : "Carregar mais resultados"}
         </button>
       ) : null}
     </div>
